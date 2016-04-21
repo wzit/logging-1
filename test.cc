@@ -2,12 +2,15 @@
 
 int main()
 {
-  logging::logger log2("mod1",std::cout);
+  logging::logging_backend b;
+  logging::logger log2("mod1234",&b);
+  b.start();
 
-  int i=10;
+  int i=10000;
   while (i--) {
-      INFO() << "what"<<" is 42.";
       LOG_ERROR(log2) << "i am log 2";
   }
+
+  b.stop_and_join();
   return 0;
 }

@@ -8,9 +8,11 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace logging {
 
+// interface :
 class logger;
 class logging_backend;
 
@@ -34,15 +36,38 @@ public:
   stream& operator<<(const T &t) { os_ << t; return *this; }
 };
 
+struct buf
+{
+private:
+  buf( const buf& ) = delete;
+  const buf& operator=( const buf& ) = delete;
+  size_t index;
+  const size_t capacity;
+  char *m;
+  bool full_;
+public:
+  buf(size_t size) :index(0),capacity(size),m(nullptr),full_(false) { m=new char[capacity]; }
+  ~buf() { delete[] m; }
+  size_t rest() { return capacity-index; }
+  const char *c_str() { return m; }
+  size_t size() { return index; }
+  void reuse() { index=0; full_ = false; }
+  bool full() { return full_; }
+  void filled() { full_ = true; }
+  void push_back(const char *s,size_t len) { memcpy(m+index, s, len); index+=len; }
+};
+typedef std::unique_ptr<buf> buf_ptr;
+typedef std::vector<buf_ptr> buf_vec;
+
 class logging_backend
 {
 public:
-  logging_backend(std::string path,std::string prefix="",std::string backend_name="logging",std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
+  logging_backend(std::string dir="./",std::string prefix="log",std::string backend_name="logging",std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
   ~logging_backend();
-  void start();
+  bool start();
   void stop_and_join();
   void append(const char* line, size_t len);
-  void backend_thread(void);
+  void thread_main(void);
 
 private:
   logging_backend( const logging_backend& ) = delete;
@@ -51,14 +76,22 @@ private:
   pid_t      tid_;
   pthread_mutex_t mutex_;
   pthread_cond_t cond_;
-  std::string path_;
+  std::string dir_;
   std::string prefix_;
   std::string suffix_;
-  int rotate_sz_;
-  int buf_sz_;
+  const int rotate_sz_;
+  const int buf_sz_;
   std::string name_;
-  int flush_interval_;
+  const int flush_interval_;
   bool running_;
+  int fd_;
+  char filename_buf_[512] = {0};
+  char time_buf_[16] = {0};
+  size_t num_;
+  struct tm tm_last_;
+
+  buf_vec buf_vec_;
+  buf_vec buf_vec_spare_;
 };
 
 class logger
