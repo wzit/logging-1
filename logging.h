@@ -3,9 +3,11 @@
 
 #include <pthread.h>
 #include <sys/time.h>
+#include <string.h>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace logging {
 
@@ -37,7 +39,7 @@ public:
 class logging_backend
 {
 public:
-  logging_backend(std::string path,std::string prefix="", std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
+  logging_backend(std::string path,std::string prefix="",std::string backend_name="logging",std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
   ~logging_backend();
   void start();
   void stop_and_join();
@@ -54,6 +56,14 @@ private:
   pid_t      tid_;
   pthread_mutex_t mutex_;
   pthread_cond_t cond_;
+  std::string path_;
+  std::string prefix_;
+  std::string suffix_;
+  int rotate_sz_;
+  int buf_sz_;
+  std::string name_;
+  int flush_interval_;
+  bool running_;
 };
 
 class logger
@@ -61,9 +71,10 @@ class logger
 private:
   stream os_;
   logging_backend *backend_;
+  char name_[7] = {0};
 public:
-  logger(stream os) :os_(os),backend_(nullptr) {}
-  logger(logging_backend *backend) :os_(std::cout),backend_(backend) {}
+  logger(const char name[7],stream os) :os_(os),backend_(nullptr) { strncpy(name_,name,6); }
+  logger(const char name[7],logging_backend *backend) :os_(std::cout),backend_(backend) { strncpy(name_,name,6); }
 
   void append(const std::string &line)
   {
@@ -75,6 +86,7 @@ public:
     }
   }
   ~logger() {}
+  const char* name() { return name_; }
 };
 
 class formatter
@@ -84,30 +96,30 @@ private:
   logger &logger_;
   char buf[32] = {0};
   //TODO: may not format every time;
-  char* now()
+  char* header()
   {
     struct timeval t;
     gettimeofday(&t,NULL);
     struct tm tm_time;
     localtime_r(&t.tv_sec, &tm_time);
     int usec = static_cast<int>(t.tv_usec % (1000 * 1000));
-    snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d",
+    snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d %6s",
 	     tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
-	     tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec,
-	     usec);
+	     tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec,usec,
+	     logger_.name());
     return buf;
   }
 
 public:
   formatter(logger &logger,const char* level,const char* file,int line,const char* func) :logger_(logger) {
-    os_ <<now()<<" "<<level<<" "<<file<<" ("<<line<<")" <<" "<< func<<" # ";
+    os_ <<header()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
   }
   std::ostringstream& stream() {return os_;}
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
 // default logger
-static logger stdout(stream(std::cout));
+static logger stdout("stdout",stream(std::cout));
 }
 
 #define DEBUG() if(logging::enabled_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
