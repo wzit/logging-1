@@ -1,6 +1,7 @@
 #ifndef LOGGING_H_
 #define LOGGING_H_
 
+#include <pthread.h>
 #include <sys/time.h>
 #include <iostream>
 #include <sstream>
@@ -9,6 +10,7 @@
 namespace logging {
 
 class logger;
+class logging_backend;
 
 enum level{
   DEBUG=0,
@@ -35,9 +37,23 @@ public:
 class logging_backend
 {
 public:
-  logging_backend(std::string path,int rotate_M=100,int bufsz_M=4,std::string prefix="", std::string suffix="");
-  void append(const std::string &line) {}
-  void detach(logger* logger) {}
+  logging_backend(std::string path,std::string prefix="", std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
+  ~logging_backend();
+  void start();
+  void stop_and_join();
+  // interface
+  void append(const char* line, size_t len);
+  // thread main
+  void thread_func(void);
+
+private:
+  // noncopyable
+  logging_backend( const logging_backend& ) = delete;
+  const logging_backend& operator=( const logging_backend& ) = delete;
+  pthread_t  pthreadid_;
+  pid_t      tid_;
+  pthread_mutex_t mutex_;
+  pthread_cond_t cond_;
 };
 
 class logger
@@ -53,15 +69,15 @@ public:
   {
     if (backend_) {
       os_ <<" should not use this! logging backend not implement !";
-      backend_->append(line);
+      backend_->append(line.c_str(),line.size());
     } else {
       os_ << line;
     }
   }
-  ~logger() { if(backend_) backend_->detach(this); }
+  ~logger() {}
 };
 
-class appender
+class formatter
 {
 private:
   std::ostringstream os_;
@@ -83,25 +99,25 @@ private:
   }
 
 public:
-  appender(logger &logger,const char* level,const char* file,int line,const char* func) :logger_(logger) {
+  formatter(logger &logger,const char* level,const char* file,int line,const char* func) :logger_(logger) {
     os_ <<now()<<" "<<level<<" "<<file<<" ("<<line<<")" <<" "<< func<<" # ";
   }
   std::ostringstream& stream() {return os_;}
-  ~appender() { os_ << std::endl; logger_.append(os_.str()); }
+  ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
-// default
+// default logger
 static logger stdout(stream(std::cout));
 }
 
-#define DEBUG() if(logging::enabled_level<=logging::DEBUG) logging::appender(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define INFO()  if(logging::enabled_level<=logging::INFO ) logging::appender(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define ERROR() if(logging::enabled_level<=logging::ERROR) logging::appender(logging::stdout,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define FATAL() if(logging::enabled_level<=logging::FATAL) logging::appender(logging::stdout,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+#define DEBUG() if(logging::enabled_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define INFO()  if(logging::enabled_level<=logging::INFO ) logging::formatter(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define ERROR() if(logging::enabled_level<=logging::ERROR) logging::formatter(logging::stdout,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define FATAL() if(logging::enabled_level<=logging::FATAL) logging::formatter(logging::stdout,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
 
-#define LOG_DEBUG(logger) if(logging::enabled_level<=logging::DEBUG) logging::appender(logger,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_INFO(logger)  if(logging::enabled_level<=logging::INFO ) logging::appender(logger,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_ERROR(logger) if(logging::enabled_level<=logging::ERROR) logging::appender(logger,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_FATAL(logger) if(logging::enabled_level<=logging::FATAL) logging::appender(logger,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_DEBUG(logger) if(logging::enabled_level<=logging::DEBUG) logging::formatter(logger,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_INFO(logger)  if(logging::enabled_level<=logging::INFO ) logging::formatter(logger,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_ERROR(logger) if(logging::enabled_level<=logging::ERROR) logging::formatter(logger,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_FATAL(logger) if(logging::enabled_level<=logging::FATAL) logging::formatter(logger,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
 
 #endif
