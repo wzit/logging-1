@@ -98,7 +98,8 @@ static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf
 {
   ::close(fd);
   snprintf(fnbuf, bufsz, "%s%s.%s.%zu%s", path, prefix, time, num, suffix);
-  fd = ::open(fnbuf, O_CREAT | O_WRONLY, 0644);
+  fd = ::open(fnbuf, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+  printf("1\n");
   if (fd == -1) {
       printf("%d,%s %s\n",fd,strerror(errno),fnbuf);
   }
@@ -182,4 +183,5 @@ void logging_backend::thread_main(void)
     tm_last_ = tm_now;
   } while(running_);
   close(fd_);
+  fd_=-1;
 }
