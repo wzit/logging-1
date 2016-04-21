@@ -61,7 +61,7 @@ void logging_backend::append(const char* line, size_t len)
 
 }
 
-void logging_backend::thread_func(void)
+void logging_backend::backend_thread(void)
 {
 
 }
