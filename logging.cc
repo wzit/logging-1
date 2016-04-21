@@ -10,7 +10,9 @@ using namespace std;
 using namespace logging;
 
 logging_backend::logging_backend(std::string dir,string prefix,string backend_name, string suffix,int rotate_M,int bufsz_M,int flush_sec)
-  :dir_(dir)
+  :pthreadid_(-1)
+  ,tid_(-1)
+  ,dir_(dir)
   ,prefix_(prefix)
   ,suffix_(suffix)
   ,rotate_sz_(1024*1024*rotate_M)
@@ -19,6 +21,7 @@ logging_backend::logging_backend(std::string dir,string prefix,string backend_na
   ,flush_interval_(flush_sec)
   ,running_(false)
   ,fd_(-1)
+  ,num_(0)
 {
   struct timeval now;
   gettimeofday(&now,NULL);

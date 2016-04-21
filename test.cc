@@ -6,7 +6,7 @@ int main()
   logging::logger log2("mod1234",&b);
   b.start();
 
-  int i=10000;
+  int i=100*10000;
   while (i--) {
       LOG_ERROR(log2) << "i am log 2";
   }
