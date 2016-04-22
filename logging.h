@@ -11,6 +11,11 @@
 #include <memory>
 
 namespace logging {
+using std::string;
+using std::ostream;
+using std::ostringstream;
+using std::unique_ptr;
+using std::vector;
 
 // interface :
 class logger;
@@ -28,10 +33,10 @@ static void enable(enum level level) { g_level = level; }
 
 class stream
 {
-  std::ostream &os_;
+  ostream &os_;
 
 public:
-  stream(std::ostream &os) :os_(os) {}
+  stream(ostream &os) :os_(os) {}
   template<typename T>
   stream& operator<<(const T &t) { os_ << t; return *this; }
 };
@@ -56,13 +61,13 @@ public:
   void filled() { full_ = true; }
   void push_back(const char *s,size_t len) { memcpy(m+index, s, len); index+=len; }
 };
-typedef std::unique_ptr<buf> buf_ptr;
-typedef std::vector<buf_ptr> buf_vec;
+typedef unique_ptr<buf> buf_ptr;
+typedef vector<buf_ptr> buf_vec;
 
 class logging_backend
 {
 public:
-  logging_backend(std::string dir="./",std::string prefix="log",std::string backend_name="logging",std::string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
+  logging_backend(string dir="./",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
   ~logging_backend();
   bool start();
   void stop_and_join();
@@ -72,26 +77,28 @@ public:
 private:
   logging_backend( const logging_backend& ) = delete;
   const logging_backend& operator=( const logging_backend& ) = delete;
-  pthread_t  pthreadid_;
-  pid_t      tid_;
-  pthread_mutex_t mutex_;
-  pthread_cond_t cond_;
-  std::string dir_;
-  std::string prefix_;
-  std::string suffix_;
-  const int rotate_sz_;
-  const int buf_sz_;
-  std::string name_;
-  const int flush_interval_;
-  bool running_;
-  int fd_;
-  char filename_buf_[512] = {0};
-  char time_buf_[16] = {0};
-  size_t num_;
-  struct tm tm_last_;
 
+  const string dir_;
+  const string prefix_;
+  const string suffix_;
+  const int    rotate_sz_;
+  const int    buf_capacity_;
+  const string name_;
+  const int    flush_interval_;
+
+  pthread_t pthreadid_;
+  pid_t     tid_;
+  pthread_mutex_t mutex_;
+  pthread_cond_t  cond_;
+
+  bool    running_;
+  int     fd_;
+  char    filename_buf_[512] = {0};
+  char    time_buf_[16] = {0};
+  size_t  num_;
+  struct  tm tm_last_;
   buf_vec buf_vec_;
-  buf_vec buf_vec_spare_;
+  buf_vec buf_vec_backend_;
 };
 
 class logger
@@ -106,7 +113,7 @@ public:
     :os_(std::cout),backend_(backend) { strncpy(name_,name,6); }
 
   const char* name() { return name_; }
-  void append(const std::string &line)
+  void append(const string &line)
   {
     if (backend_)  backend_->append(line.c_str(),line.size());
     else           os_ << line;
@@ -116,7 +123,7 @@ public:
 // use default style or modify below for customization.
 class formatter
 {
-  std::ostringstream os_;
+  ostringstream os_;
   logger &logger_;
   char buf[32] = {0};
 
@@ -135,7 +142,7 @@ public:
   formatter(logger &logger,const char* level,const char* file,int line,const char* func) :logger_(logger) {
     os_ <<header()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
   }
-  std::ostringstream& stream() {return os_;}
+  ostringstream& stream() {return os_;}
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
