@@ -97,7 +97,7 @@ void logging_backend::append(const char* line, size_t len)
 
 static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf, size_t bufsz, const char* time, size_t num, const char* suffix)
 {
-  ::close(fd);
+  if(fd != -1) ::close(fd);
   snprintf(fnbuf, bufsz, "%s%s.%s.%zu%s", path, prefix, time, num, suffix);
   fd = ::open(fnbuf, O_WRONLY|O_CREAT|O_TRUNC, 0644);
   if (fd == -1) {
@@ -128,14 +128,18 @@ void logging_backend::thread_main(void)
 {
   ::prctl(PR_SET_NAME, name_.c_str());
   this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
+
   //open file
-  struct timeval now;
-  gettimeofday(&now,NULL);
-  struct tm tm_now;
-  localtime_r(&now.tv_sec, &tm_now);
-  snprintf(time_buf_, sizeof(time_buf_), "%4d%02d%02d%02d",
-           tm_now.tm_year + 1900,tm_now.tm_mon + 1,tm_now.tm_mday,tm_now.tm_hour);
-  fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,num_,suffix_.c_str());
+  { // here will use check if file exsit and change file name
+    mkdir_unless_exsit(dir_.c_str());
+    struct timeval now;
+    gettimeofday(&now,NULL);
+    struct tm tm_now;
+    localtime_r(&now.tv_sec, &tm_now);
+    snprintf(time_buf_, sizeof(time_buf_), "%4d%02d%02d%02d",
+	     tm_now.tm_year + 1900,tm_now.tm_mon + 1,tm_now.tm_mday,tm_now.tm_hour);
+    fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,num_,suffix_.c_str());
+  }
 
   do{
     { // swap front/back-end buffer in the cs.
@@ -186,7 +190,7 @@ void logging_backend::thread_main(void)
 	buf_ptr &buf = buf_vec_backend_.at(i);
 	if (buf->size() != 0)
 	  //printf("writing : %zu ,",i);
-	  ::write(fd_,buf->c_str(),buf->size()); // TODO: or use writev ?
+	  ::write(fd_,buf->c_str(),buf->size());
 	buf->reuse();
     }
     //printf("\n");
