@@ -64,15 +64,15 @@ logging_backend::~logging_backend()
 
 static void *_starter(void *arg)
 {
-  logging_backend *backend = static_cast<logging_backend*>(arg);
-  backend->thread_main();
+  logging_backend *self = static_cast<logging_backend*>(arg);
+  self->thread_main();
   return NULL;
 }
 
 bool logging_backend::start()
 {
-  running_ = true;
   if (pthread_create(&pthreadid_, NULL, _starter, this) == 0) {
+    running_ = true;
     return true;
   } else {
     running_ = false;
