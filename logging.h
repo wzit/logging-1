@@ -114,7 +114,7 @@ private:
   pthread_mutex_t mutex_;
   pthread_cond_t  cond_;
 
-  bool    running_;
+  volatile bool running_;
   int     fd_;
   char    filename_buf_[512] = {0};
   char    time_buf_[16] = {0};
