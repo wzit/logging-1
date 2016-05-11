@@ -33,6 +33,10 @@
 using namespace std;
 using namespace logging;
 
+volatile level logging::enabled_level = INFO;
+logger logging::stdout("stdout",stream(std::cout));
+logger logging::stderr("stderr",stream(std::cerr));
+
 static void mkdir_unless_exsit(const char *dir);
 static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf, size_t bufsz, const char* time, const char* suffix);
 
@@ -62,14 +66,14 @@ logging_backend::logging_backend(bool async,string dir,string prefix,string back
 logging_backend::~logging_backend()
 {
   if (async_) {
-    //stop_and_join();
+    stop_and_join();
     pthread_detach(pthreadid_);
   }
   pthread_mutex_destroy(&mutex_);
   pthread_cond_destroy(&cond_);
   close(fd_);
 }
-/*
+
 static void *_starter(void *arg)
 {
   logging_backend *self = static_cast<logging_backend*>(arg);
@@ -102,12 +106,12 @@ void logging_backend::stop_and_join()
     pthread_join(pthreadid_, NULL);
   }
 }
-*/
+
 void logging_backend::append(const char* line, size_t len)
 {
   if (not async_) {
       pthread_mutex_lock(&mutex_);
-      append_to_file(line,len);
+      sync_to_file(line,len);
       pthread_mutex_unlock(&mutex_);
       return;
   }
@@ -173,8 +177,8 @@ static bool need_rotate_by_time(const struct tm *last,const struct tm *now,bool 
 
 static bool need_rotate_by_size(int fd,size_t size)
 {
+  // may not stat every time;
   struct stat stat;
-  return false;
   if (fstat(fd, &stat) != 0)
     return true;
   else
@@ -197,7 +201,7 @@ void logging_backend::update_time()
 	   tm_now_.tm_hour, tm_now_.tm_min, tm_now_.tm_sec, usec);
 }
 
-void logging_backend::append_to_file(const char* line, size_t len)
+void logging_backend::sync_to_file(const char* line, size_t len)
 {
   update_time();
   if (need_rotate_by_size(fd_,rotate_sz_) ||
@@ -206,93 +210,72 @@ void logging_backend::append_to_file(const char* line, size_t len)
   }
   write_noreturn(fd_,line,len);
 }
-/*
+
 void logging_backend::thread_main(void)
 {
   ::prctl(PR_SET_NAME, name_.c_str());
   this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
 
-  //open file
-  { // here will use check if file exsit and change file name
-    mkdir_unless_exsit(dir_.c_str());
-    struct timeval now;
-    gettimeofday(&now,NULL);
-    struct tm tm_now;
-    localtime_r(&now.tv_sec, &tm_now);
-    snprintf(time_buf_, sizeof(time_buf_), "%4d%02d%02d%02d",
-	     tm_now.tm_year + 1900,tm_now.tm_mon + 1,tm_now.tm_mday,tm_now.tm_hour);
-    fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,num_,suffix_.c_str());
-  }
-
   do{
     { // swap front/back-end buffer in the cs.
       pthread_mutex_lock(&mutex_);
 
-      // FIXME: use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind.
+      // maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind.
       struct timespec abstime;
       clock_gettime(CLOCK_REALTIME, &abstime);
       abstime.tv_sec += flush_interval_;
 
       pthread_cond_timedwait(&cond_, &mutex_, &abstime);
 
-      //printf("     front %zu | back %zu\n",buf_vec_.size(),buf_vec_backend_.size());
       swap(buf_vec_,buf_vec_backend_);
-      //printf("swap:front %zu | back %zu\n",buf_vec_.size(),buf_vec_backend_.size());
+
       pthread_mutex_unlock(&mutex_);
     }
 
-    if (running_ && buf_vec_backend_[0]->size()==0) {
+    if (buf_vec_backend_[0]->size()==0) {
       continue;
     }
 
-    struct timeval now;
-    gettimeofday(&now,NULL);
-    struct tm tm_now;
-    localtime_r(&now.tv_sec, &tm_now);
+    update_time();
 
-    mkdir_unless_exsit(dir_.c_str());
-
-    bool need_rotate_by_size = size_need_rotate(fd_,rotate_sz_);
-    bool need_rotate_by_time = time_need_rotate(&tm_last_,&tm_now);
-
-    if (need_rotate_by_size) {
-	num_+=1;
-    }
-    if (need_rotate_by_time) {
-	num_=0;
-    }
-
-    if (0){//need_rotate_by_time or need_rotate_by_size or !running_) {
-      snprintf(time_buf_, sizeof(time_buf_), "%4d%02d%02d%02d",
-               tm_now.tm_year + 1900,tm_now.tm_mon + 1,tm_now.tm_mday,tm_now.tm_hour);
-      fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,num_,suffix_.c_str());
-      printf("rotate?\n");
+    if (need_rotate_by_size(fd_,rotate_sz_) ||
+        need_rotate_by_time(&tm_last_,&tm_now_)) {
+        fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
     }
 
     for (size_t i=0; i < buf_vec_backend_.size(); ++i) {
 	buf_ptr &buf = buf_vec_backend_.at(i);
 	if (buf->size() != 0)
-	  //printf("writing : %zu ,",i);
-	  ::write(fd_,buf->c_str(),buf->size());
+	  ::write_noreturn(fd_,buf->c_str(),buf->size());
 	buf->reuse();
     }
-    //printf("\n");
-    tm_last_ = tm_now;
   } while(running_);
   close(fd_);
   fd_=-1;
 }
-*/
 
-////// fast mktime
 
-#define MINUTE 60
-#define HOUR (60*MINUTE)
-#define DAY (24*HOUR)
-#define YEAR (365*DAY)
+// better mktime
 
-// (year+1)/4 用来计算1970年以来的闰年数，而(year+2)%4则是用来判断是不是闰年.
+/*
+ *  linux/kernel/mktime.c
+ *
+ *  (C) 1991  Linus Torvalds
+ */
 
+#include <time.h>
+
+/*
+ * This isn't the library routine, it is only used in the kernel.
+ * as such, we don't care about years<1970 etc, but assume everything
+ * is ok. Similarly, TZ etc is happily ignored. We just do everything
+ * as easily as possible. Let's find something public for the library
+ * routines (although I think minix times is public).
+ */
+/*
+ * PS. I hate whoever though up the year 1970 - couldn't they have gotten
+ * a leap-year instead? I also hate Gregorius, pope or no. I'm grumpy.
+ */
 #define MINUTE 60
 #define HOUR (60*MINUTE)
 #define DAY (24*HOUR)

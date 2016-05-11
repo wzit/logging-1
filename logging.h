@@ -40,7 +40,9 @@ using std::ostringstream;
 using std::unique_ptr;
 using std::vector;
 
-// interface :
+/*
+ *  logging front-end & back-end interface.
+ */
 class logger;
 class logging_backend;
 
@@ -51,8 +53,25 @@ enum level{
   FATAL
 };
 
-static bool g_level = INFO;
-static void enable(enum level level) { g_level = level; }
+extern volatile level enabled_level;
+void enable(enum level level);
+
+extern logger stdout;
+extern logger stderr;
+
+#define DEBUG()  if(logging::enabled_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define INFO()   if(logging::enabled_level<=logging::INFO ) logging::formatter(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define ERROR()  if(logging::enabled_level<=logging::ERROR) logging::formatter(logging::stdout,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define FATAL()  if(logging::enabled_level<=logging::FATAL) logging::formatter(logging::stdout,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+
+#define LOG_DEBUG(logger) if(logging::enabled_level<=logging::DEBUG) logging::formatter(logger,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_INFO(logger)  if(logging::enabled_level<=logging::INFO ) logging::formatter(logger,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_ERROR(logger) if(logging::enabled_level<=logging::ERROR) logging::formatter(logger,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_FATAL(logger) if(logging::enabled_level<=logging::FATAL) logging::formatter(logger,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+
+/*
+ *  implementation
+ */
 
 class stream
 {
@@ -90,14 +109,13 @@ typedef vector<buf_ptr> buf_vec;
 class logging_backend
 {
 public:
-  logging_backend(bool async=false,string dir="./log/",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_K=1,int flush_sec=3);
+  logging_backend(bool async=false,string dir="./log/",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_K=4,int flush_sec=3);
   ~logging_backend();
   void append(const char* line, size_t len);
 
-
-  //bool start();
-  //void stop_and_join();
-  //void thread_main(void);
+  bool start();
+  void stop_and_join();
+  void thread_main(void);
 
 private:
   logging_backend( const logging_backend& ) = delete;
@@ -130,7 +148,7 @@ private:
   buf_vec buf_vec_;
   buf_vec buf_vec_backend_;
 
-  void append_to_file(const char* line, size_t len);
+  void sync_to_file(const char* line, size_t len);
 };
 
 class logger
@@ -180,18 +198,6 @@ public:
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
-// default logger
-static logger stdout("stdout",stream(std::cout));
-}
-
-#define DEBUG() if(logging::g_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define INFO()  if(logging::g_level<=logging::INFO ) logging::formatter(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define ERROR() if(logging::g_level<=logging::ERROR) logging::formatter(logging::stdout,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define FATAL() if(logging::g_level<=logging::FATAL) logging::formatter(logging::stdout,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
-
-#define LOG_DEBUG(logger) if(logging::g_level<=logging::DEBUG) logging::formatter(logger,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_INFO(logger)  if(logging::g_level<=logging::INFO ) logging::formatter(logger,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_ERROR(logger) if(logging::g_level<=logging::ERROR) logging::formatter(logger,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_FATAL(logger) if(logging::g_level<=logging::FATAL) logging::formatter(logger,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+} // namespace logging;
 
 #endif
