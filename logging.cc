@@ -35,11 +35,9 @@ using namespace logging;
 
 volatile level logging::enabled_level = INFO;
 logger logging::stdout("stdout",stream(std::cout));
-logger logging::stderr("stderr",stream(std::cerr));
 
 static void mkdir_unless_exsit(const char *dir);
-static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf, size_t bufsz, const char* time, const char* suffix);
-
+static int  rotate_file(int fd, const char* path, const char* prefix, char* fnbuf, size_t bufsz, const char* time, const char* suffix);
 static long kernel_mktime(struct tm * tm);
 
 logging_backend::logging_backend(bool async,string dir,string prefix,string backend_name, string suffix,int rotate_M,int bufsz_K,int flush_sec)
@@ -61,6 +59,7 @@ logging_backend::logging_backend(bool async,string dir,string prefix,string back
   fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
   if (pthread_mutex_init(&mutex_, NULL) != 0) throw "mutex init error";
   if (pthread_cond_init(&cond_, NULL) != 0) throw "condition init error";
+  if (async_) start();
 }
 
 logging_backend::~logging_backend()
@@ -74,7 +73,7 @@ logging_backend::~logging_backend()
   close(fd_);
 }
 
-static void *_starter(void *arg)
+void* logging::_starter(void *arg)
 {
   logging_backend *self = static_cast<logging_backend*>(arg);
   self->thread_main();
@@ -156,7 +155,7 @@ static void mkdir_unless_exsit(const char *dir)
 {
   if (-1 == access(dir,F_OK)) {
       string mkdir = string("mkdir -p ") + dir;
-      system(mkdir.c_str());
+      if(system(mkdir.c_str())) return;
   }
 }
 
@@ -187,7 +186,17 @@ static bool need_rotate_by_size(int fd,size_t size)
 
 static void write_noreturn(int fd, const char *m, size_t s)
 {
-  ::write(fd,m,s);
+  int total = 0;
+  while(s > 0) {
+    int written = ::write(fd,m,s);
+    if (written == -1) {
+	if (errno == EINTR) continue;
+	printf("%d,%s\n",fd,strerror(errno));return;
+    }
+    m += written;
+    total += written;
+    s -= written;
+  }
 }
 
 void logging_backend::update_time()
@@ -217,24 +226,19 @@ void logging_backend::thread_main(void)
   this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
 
   do{
-    { // swap front/back-end buffer in the cs.
-      pthread_mutex_lock(&mutex_);
+      { // swap front/back-end buffer in the CS.
+	pthread_mutex_lock(&mutex_);
+	// maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind.
+	struct timespec abstime;
+	clock_gettime(CLOCK_REALTIME, &abstime);
+	abstime.tv_sec += flush_interval_;
+	pthread_cond_timedwait(&cond_, &mutex_, &abstime);
+	swap(buf_vec_,buf_vec_backend_);
+	pthread_mutex_unlock(&mutex_);
+      }
 
-      // maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind.
-      struct timespec abstime;
-      clock_gettime(CLOCK_REALTIME, &abstime);
-      abstime.tv_sec += flush_interval_;
-
-      pthread_cond_timedwait(&cond_, &mutex_, &abstime);
-
-      swap(buf_vec_,buf_vec_backend_);
-
-      pthread_mutex_unlock(&mutex_);
-    }
-
-    if (buf_vec_backend_[0]->size()==0) {
+    if (buf_vec_backend_[0]->size()==0)
       continue;
-    }
 
     update_time();
 
@@ -253,9 +257,6 @@ void logging_backend::thread_main(void)
   close(fd_);
   fd_=-1;
 }
-
-
-// better mktime
 
 /*
  *  linux/kernel/mktime.c

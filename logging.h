@@ -57,7 +57,6 @@ extern volatile level enabled_level;
 void enable(enum level level);
 
 extern logger stdout;
-extern logger stderr;
 
 #define DEBUG()  if(logging::enabled_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
 #define INFO()   if(logging::enabled_level<=logging::INFO ) logging::formatter(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
@@ -72,7 +71,6 @@ extern logger stderr;
 /*
  *  implementation
  */
-
 class stream
 {
   ostream &os_;
@@ -85,13 +83,13 @@ public:
 
 struct buf
 {
-private:
   buf( const buf& ) = delete;
   const buf& operator=( const buf& ) = delete;
   size_t index;
   const size_t capacity;
   char *m;
   bool full_;
+
 public:
   buf(size_t size) :index(0),capacity(size),m(nullptr),full_(false) { m=new char[capacity]; }
   ~buf() { delete[] m; }
@@ -106,20 +104,29 @@ public:
 typedef unique_ptr<buf> buf_ptr;
 typedef vector<buf_ptr> buf_vec;
 
+void* _starter(void *arg);
 class logging_backend
 {
 public:
-  logging_backend(bool async=false,string dir="./log/",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_K=4,int flush_sec=3);
+  logging_backend(bool async=false
+		  ,string dir="./log/"
+		  ,string prefix="log"
+		  ,string backend_name="logbe"
+		  ,string suffix=".log"
+		  ,int rotate_M=100
+		  ,int bufsz_K=4
+		  ,int flush_sec=3);
   ~logging_backend();
   void append(const char* line, size_t len);
-
-  bool start();
-  void stop_and_join();
-  void thread_main(void);
 
 private:
   logging_backend( const logging_backend& ) = delete;
   const logging_backend& operator=( const logging_backend& ) = delete;
+
+  bool start();
+  void stop_and_join();
+  friend void *_starter(void *arg);
+  void thread_main(void);
 
   const bool   async_;
   const string dir_;
@@ -154,24 +161,23 @@ private:
 class logger
 {
   stream os_;
-  logging_backend *backend_;
+  logging_backend *b_;
   char name_[7] = {0};
+
 public:
   logger(const char name[7],stream os)
-    :os_(os),backend_(nullptr) { strncpy(name_,name,6); }
+    :os_(os),b_(nullptr) { strncpy(name_,name,6); }
   logger(const char name[7],logging_backend *backend)
-    :os_(std::cout),backend_(backend) { strncpy(name_,name,6); }
+    :os_(std::cout),b_(backend) { strncpy(name_,name,6); }
 
   const char* name() { return name_; }
   void append(const string &line)
   {
-    if (backend_)  backend_->append(line.c_str(),line.size());
-    else
-      os_ << line;
+    if (b_)  b_->append(line.c_str(),line.size());
+    else     os_ << line;
   }
 };
 
-// use default style or modify below for customization.
 class formatter
 {
   ostringstream os_;
@@ -185,7 +191,7 @@ class formatter
     localtime_r(&t.tv_sec, &tm_time);
     int usec = static_cast<int>(t.tv_usec % (1000 * 1000));
     // TODO: may not format every msec, store prefix ymdhms
-    snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d %6s", //use 31 byte
+    snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d %6s",
 	     tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
 	     tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, usec, logger_.name());
     return buf; }
@@ -198,6 +204,6 @@ public:
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
-} // namespace logging;
+} /* logging */
 
 #endif
