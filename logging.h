@@ -90,17 +90,20 @@ typedef vector<buf_ptr> buf_vec;
 class logging_backend
 {
 public:
-  logging_backend(string dir="./",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_M=1,int flush_sec=3);
+  logging_backend(bool async=false,string dir="./log/",string prefix="log",string backend_name="logging",string suffix=".log",int rotate_M=100,int bufsz_K=1,int flush_sec=3);
   ~logging_backend();
-  bool start();
-  void stop_and_join();
   void append(const char* line, size_t len);
-  void thread_main(void);
+
+
+  //bool start();
+  //void stop_and_join();
+  //void thread_main(void);
 
 private:
   logging_backend( const logging_backend& ) = delete;
   const logging_backend& operator=( const logging_backend& ) = delete;
 
+  const bool   async_;
   const string dir_;
   const string prefix_;
   const string suffix_;
@@ -117,11 +120,17 @@ private:
   volatile bool running_;
   int     fd_;
   char    filename_buf_[512] = {0};
-  char    time_buf_[16] = {0};
-  size_t  num_;
-  struct  tm tm_last_;
+  char    time_buf_[32] = {0};
+
+  struct tm tm_last_;
+  struct timeval now_;
+  struct tm tm_now_;
+  void update_time();
+
   buf_vec buf_vec_;
   buf_vec buf_vec_backend_;
+
+  void append_to_file(const char* line, size_t len);
 };
 
 class logger
@@ -139,7 +148,8 @@ public:
   void append(const string &line)
   {
     if (backend_)  backend_->append(line.c_str(),line.size());
-    else           os_ << line;
+    else
+      os_ << line;
   }
 };
 
@@ -156,6 +166,7 @@ class formatter
     struct tm tm_time;
     localtime_r(&t.tv_sec, &tm_time);
     int usec = static_cast<int>(t.tv_usec % (1000 * 1000));
+    // TODO: may not format every msec, store prefix ymdhms
     snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d %6s", //use 31 byte
 	     tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
 	     tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, usec, logger_.name());
