@@ -46,7 +46,7 @@ using std::vector;
 class logger;
 class logging_backend;
 
-enum level{
+enum level {
   DEBUG,
   INFO,
   ERROR,
@@ -83,23 +83,23 @@ public:
 
 struct buf
 {
-  buf( const buf& ) = delete;
-  const buf& operator=( const buf& ) = delete;
+  buf(const buf&) = delete;
+  const buf& operator=(const buf&) = delete;
   size_t index;
   const size_t capacity;
   char *m;
   bool full_;
 
 public:
-  buf(size_t size) :index(0),capacity(size),m(nullptr),full_(false) { m=new char[capacity]; }
+  buf(size_t size) :index(0), capacity(size), m(nullptr), full_(false) { m = new char[capacity]; }
   ~buf() { delete[] m; }
-  size_t rest() { return capacity-index; }
+  size_t rest() { return capacity - index; }
   const char *c_str() { return m; }
   size_t size() { return index; }
-  void reuse() { index=0; full_ = false; }
+  void reuse() { index = 0; full_ = false; }
   bool full() { return full_; }
   void filled() { full_ = true; }
-  void push_back(const char *s,size_t len) { memcpy(m+index, s, len); index+=len; }
+  void push_back(const char *s, size_t len) { memcpy(m + index, s, len); index += len; }
 };
 typedef unique_ptr<buf> buf_ptr;
 typedef vector<buf_ptr> buf_vec;
@@ -120,14 +120,16 @@ public:
   void append(const char* line, size_t len);
 
 private:
-  logging_backend( const logging_backend& ) = delete;
-  const logging_backend& operator=( const logging_backend& ) = delete;
+  logging_backend(const logging_backend&) = delete;
+  const logging_backend& operator=(const logging_backend&) = delete;
 
   bool start();
   void stop_and_join();
   friend void *_starter(void *arg);
   void thread_main(void);
-
+  void sync_to_file(const char* line, size_t len);
+  void update_time();
+  
   const bool   async_;
   const string dir_;
   const string prefix_;
@@ -148,14 +150,11 @@ private:
   char    time_buf_[32] = {0};
 
   struct tm tm_last_;
-  struct timeval now_;
   struct tm tm_now_;
-  void update_time();
-
+  struct timeval now_;  
+  
   buf_vec buf_vec_;
   buf_vec buf_vec_backend_;
-
-  void sync_to_file(const char* line, size_t len);
 };
 
 class logger
@@ -165,15 +164,14 @@ class logger
   char name_[7] = {0};
 
 public:
-  logger(const char name[7],stream os)
-    :os_(os),b_(nullptr) { strncpy(name_,name,6); }
+  logger(const char name[7], stream os)
+    :os_(os), b_(nullptr) { strncpy(name_, name, 6); }
   logger(const char name[7],logging_backend *backend)
-    :os_(std::cout),b_(backend) { strncpy(name_,name,6); }
+    :os_(std::cout), b_(backend) { strncpy(name_, name,6); }
 
   const char* name() { return name_; }
-  void append(const string &line)
-  {
-    if (b_)  b_->append(line.c_str(),line.size());
+  void append(const string &line) {
+    if (b_)  b_->append(line.c_str(), line.size());
     else     os_ << line;
   }
 };
@@ -194,13 +192,14 @@ class formatter
     snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d %6s",
 	     tm_time.tm_year + 1900, tm_time.tm_mon + 1, tm_time.tm_mday,
 	     tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, usec, logger_.name());
-    return buf; }
+    return buf;
+  }
 
 public:
-  formatter(logger &logger,const char* level,const char* file,int line,const char* func) :logger_(logger) {
-    os_ <<header()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
+  formatter(logger &logger, const char* level, const char* file, int line, const char* func) :logger_(logger) {
+    os_ << header() << " " << level << " " << file << ":" << line << "(" << func << ") # ";
   }
-  ostringstream& stream() {return os_;}
+  ostringstream& stream() { return os_; }
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
