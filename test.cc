@@ -9,7 +9,7 @@ int main()
   logging::logger log2("mod1234",&b);
 
   int i=0;
-  while (i++<100000) {
+  while (i++<200000) {
       LOG_INFO(log2) << i <<" " <<buf;
   }
 

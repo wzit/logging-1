@@ -224,6 +224,7 @@ void logging_backend::thread_main(void)
 {
   ::prctl(PR_SET_NAME, name_.c_str());
   this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
+  bool looping = true;
 
   do{
       { // swap front/back-end buffer in the CS.
@@ -234,10 +235,11 @@ void logging_backend::thread_main(void)
 	abstime.tv_sec += flush_interval_;
 	pthread_cond_timedwait(&cond_, &mutex_, &abstime);
 	swap(buf_vec_,buf_vec_backend_);
+	if (!running_) looping = false;
 	pthread_mutex_unlock(&mutex_);
       }
 
-    if (buf_vec_backend_[0]->size()==0)
+    if (buf_vec_backend_[0]->size()==0 && looping)
       continue;
 
     update_time();
@@ -253,7 +255,8 @@ void logging_backend::thread_main(void)
 	  ::write_noreturn(fd_,buf->c_str(),buf->size());
 	buf->reuse();
     }
-  } while(running_);
+
+  } while(looping);
   close(fd_);
   fd_=-1;
 }
