@@ -98,8 +98,8 @@ void logging_backend::stop_and_join()
   if (not async_)  return;
 
   if (running_) {
-    running_ = false;
     pthread_mutex_lock(&mutex_);
+    running_ = false;
     pthread_cond_signal(&cond_);
     pthread_mutex_unlock(&mutex_);
     pthread_join(pthreadid_, NULL);
@@ -235,7 +235,7 @@ void logging_backend::thread_main(void)
 	abstime.tv_sec += flush_interval_;
 	pthread_cond_timedwait(&cond_, &mutex_, &abstime);
 	swap(buf_vec_,buf_vec_backend_);
-	if (!running_) looping = false;
+	if (not running_) looping = false;
 	pthread_mutex_unlock(&mutex_);
       }
 
@@ -255,7 +255,6 @@ void logging_backend::thread_main(void)
 	  ::write_noreturn(fd_,buf->c_str(),buf->size());
 	buf->reuse();
     }
-
   } while(looping);
   close(fd_);
   fd_=-1;
