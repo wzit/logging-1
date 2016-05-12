@@ -24,6 +24,8 @@
 #ifndef LOGGING_H_
 #define LOGGING_H_
 
+#include <pthread.h>
+
 #include <time.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -33,8 +35,6 @@
 #include <sys/stat.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
-
-#include <pthread.h>
 
 #include <string>
 #include <vector>
@@ -60,17 +60,12 @@ namespace logging {
 class logger;
 class backend;
 
-enum level {
-  DEBUG,
-  INFO ,
-  ERROR,
-  FATAL
-};
+enum level { DEBUG, INFO, ERROR, FATAL };
 
 level _enabled = INFO;
 void enable(level level) { _enabled = level; }
 
-extern logger stdout, stderr;
+extern logger stdout, stderr, stdlog;
 
 #define LOG_DEBUG(l) if(logging::_enabled<=logging::DEBUG) logging::formatter(l,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
 #define LOG_INFO(l)  if(logging::_enabled<=logging::INFO ) logging::formatter(l,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
@@ -237,17 +232,18 @@ private:
   }
 
   void update_time() {
-    gettimeofday(&now_,NULL);
+    ::gettimeofday(&now_,NULL);
     tm_last_ = tm_now_;
-    localtime_r(&now_.tv_sec, &tm_now_);
+    ::localtime_r(&now_.tv_sec, &tm_now_);
     int usec = static_cast<int>(now_.tv_usec % (1000 * 1000));
+    // TODO: may not format every msec, store prefix ymdhms
     snprintf(time_buf_, sizeof(time_buf_), "%4d%02d%02d%02d.%02d.%02d%02d%06d",
 	     tm_now_.tm_year + 1900,tm_now_.tm_mon + 1,tm_now_.tm_mday,tm_now_.tm_hour,
 	     tm_now_.tm_hour, tm_now_.tm_min, tm_now_.tm_sec, usec);
   }
 
   void mkdir_unless_exsit(const char *dir) {
-    if (-1 == access(dir,F_OK)) {
+    if (-1 == ::access(dir,F_OK)) {
       string mkdir = string("mkdir -p ") + dir;
       if(-1 == system(mkdir.c_str())) printf("%s\n", strerror(errno));
     }
@@ -314,7 +310,7 @@ private:
 
   bool need_rotate_by_size(int fd,size_t size) {
     struct stat stat;
-    if (fstat(fd, &stat) != 0) return true;
+    if (::fstat(fd, &stat) != 0) return true;
     else
       return (size_t)stat.st_size > size ? true : false;
   }
@@ -325,7 +321,7 @@ private:
       ssize_t written = ::write(fd, buf, size);
       if (written == -1) {
         if (errno == EINTR) continue;
-        printf("%d,%s\n",fd,strerror(errno)); return;
+        printf("%d,%s\n",fd,::strerror(errno)); return;
       }
       buf += written;
       total += written;
@@ -333,7 +329,7 @@ private:
     }
   }
 
-  void thread_main(void) {
+  void _main(void) {
     ::prctl(PR_SET_NAME, name_.c_str());
     this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
     bool looping = true;
@@ -370,8 +366,7 @@ private:
         buf->reuse();
       }
     } while(looping);
-    close(fd_);
-    fd_=-1;
+    ::close(fd_);
   }
 
   const bool   async_;
@@ -385,8 +380,8 @@ private:
   const string name_;
   const size_t flush_interval_;
 
-  pthread_t pthreadid_;
-  pid_t     tid_;
+  pthread_t       pthreadid_;
+  pid_t           tid_;
   pthread_mutex_t mutex_;
   pthread_cond_t  cond_;
 
@@ -406,23 +401,34 @@ private:
 void* _starter(void *arg)
 {
   backend *be = static_cast<backend*>(arg);
-  be->thread_main();
+  be->_main();
   return NULL;
 }
 
 class logger
 {
   stream os_;
-  backend *be_;
+  backend *const be_;
   char name_[7] = {0};
 
 public:
+  logger()
+    :os_(std::cout), be_(nullptr) { strncpy(name_, "module", 6); }
+
+  logger(const char name[7])
+    :os_(std::cout), be_(nullptr) { strncpy(name_, name, 6); }
+
+  logger(backend *const be)
+    :os_(std::cout), be_(be) { strncpy(name_, "module", 6); }
+
+  logger(const char name[7],backend *const be)
+    :os_(std::cout), be_(be) { strncpy(name_, name, 6); }
+
   logger(const char name[7], stream os)
     :os_(os), be_(nullptr) { strncpy(name_, name, 6); }
-  logger(const char name[7],backend *be)
-    :os_(std::cout), be_(be) { strncpy(name_, name,6); }
 
   const char* name() { return name_; }
+
   void append(const string &line) {
     if (be_) be_->append(line.c_str(), line.size());
     else     os_ << line;
@@ -435,7 +441,7 @@ class formatter
   logger &logger_;
   char buf[32] = {0};
 
-  char* header() {
+  char* head() {
     struct timeval t;
     gettimeofday(&t,NULL);
     struct tm tm_time;
@@ -451,15 +457,15 @@ class formatter
 public:
   formatter(logger &logger, const char* level, const char* file, int line, const char* func)
     :logger_(logger) {
-    os_<<header()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
+    os_<<head()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
   }
   ostringstream& stream() { return os_; }
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
-/* default logger definition */
 logger stdout("stdout",stream(std::cout));
 logger stderr("stderr",stream(std::cerr));
+logger stdlog("stdlog",stream(std::clog));
 
 } /* logging */
 
