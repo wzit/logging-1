@@ -86,9 +86,9 @@ bool backend::start()
 {
   if (not async_) return true;
   if (pthread_create(&pthreadid_, NULL, _starter, this) == 0) {
-      pthread_mutex_lock(&mutex_);
-      running_ = true;
-      pthread_mutex_unlock(&mutex_);
+    pthread_mutex_lock(&mutex_);
+    running_ = true;
+    pthread_mutex_unlock(&mutex_);
     return true;
   } else {
     running_ = false;
@@ -120,9 +120,8 @@ void backend::append(const char* line, size_t len)
   pthread_mutex_lock(&mutex_);
   size_t i = 0;
   // find the first one not-full buf in vector.
-  for (;i < buf_vec_.size();++i) {
-    if(not buf_vec_[i]->full())
-      break;
+  for (; i < buf_vec_.size(); ++i) {
+    if(not buf_vec_[i]->full()) break;
   }
   // all buf are full or no buf exsit, new one
   if (i >= buf_vec_.size())
@@ -147,9 +146,7 @@ static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf
   if(fd != -1) ::close(fd);
   snprintf(fnbuf, bufsz, "%s%s.%s%s", path, prefix, time, suffix);
   fd = ::open(fnbuf, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-  if (fd == -1) {
-    printf("%d,%s %s\n",fd,strerror(errno),fnbuf);
-  }
+  if (fd == -1) printf("%d,%s %s\n",fd,strerror(errno),fnbuf);
   return fd;
 }
 
@@ -157,20 +154,18 @@ static void mkdir_unless_exsit(const char *dir)
 {
   if (-1 == access(dir,F_OK)) {
     string mkdir = string("mkdir -p ") + dir;
-    if(-1 == system(mkdir.c_str()))
-      printf("%s\n", strerror(errno));
+    if(-1 == system(mkdir.c_str())) printf("%s\n", strerror(errno));
   }
 }
 
-static bool need_rotate_by_time(const struct tm *last,const struct tm *now,bool rotate_by_hour=true,bool rotate_by_day=true)
+static bool need_rotate_by_time(const struct tm *last, const struct tm *now, bool rotate_by_hour=true, bool rotate_by_day=true)
 {
+  struct tm l = *last, n = *now;
+  l.tm_min=0; l.tm_sec = 0; n.tm_min=0; n.tm_sec = 0;
   if (rotate_by_day && not rotate_by_hour) {
-    struct tm l = *last; l.tm_hour=0;l.tm_min=0;l.tm_sec = 0;
-    struct tm n = *now;  n.tm_hour=0;n.tm_min=0;n.tm_sec = 0;
+    l.tm_hour=0, n.tm_hour=0;
     return kernel_mktime(&l) < kernel_mktime(&n);
   } else if (rotate_by_hour) {
-    struct tm l = *last; l.tm_min=0;l.tm_sec = 0;
-    struct tm n = *now;  n.tm_min=0;n.tm_sec = 0;
     return kernel_mktime(&l) < kernel_mktime(&n);
   } else {
     return false;
@@ -179,26 +174,24 @@ static bool need_rotate_by_time(const struct tm *last,const struct tm *now,bool 
 
 static bool need_rotate_by_size(int fd,size_t size)
 {
-  // may not stat every time;
   struct stat stat;
-  if (fstat(fd, &stat) != 0)
-    return true;
+  if (fstat(fd, &stat) != 0) return true;
   else
     return (size_t)stat.st_size > size ? true : false;
 }
 
-static void write_noreturn(int fd, const char *m, size_t s)
+static void write_noreturn(int fd, const char *buf, size_t size)
 {
-  int total = 0;
-  while(s > 0) {
-    int written = ::write(fd,m,s);
+  ssize_t total = 0;
+  while(size > 0) {
+    ssize_t written = ::write(fd, buf, size);
     if (written == -1) {
       if (errno == EINTR) continue;
-      printf("%d,%s\n",fd,strerror(errno));return;
+      printf("%d,%s\n",fd,strerror(errno)); return;
     }
-    m += written;
+    buf += written;
     total += written;
-    s -= written;
+    size -= written;
   }
 }
 
@@ -216,7 +209,7 @@ void backend::update_time()
 void backend::sync_to_file(const char* line, size_t len)
 {
   update_time();
-  if (need_rotate_by_size(fd_,rotate_sz_) ||
+  if (need_rotate_by_size(fd_,rotate_sz_) or
       need_rotate_by_time(&tm_last_,&tm_now_)) {
     fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
   }
@@ -230,24 +223,25 @@ void backend::thread_main(void)
   bool looping = true;
 
   do{
-      { // swap front/back-end buffer in the CS.
+      {
+/* swap front/back-end buffer in the CS. */
 	pthread_mutex_lock(&mutex_);
-	// maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind.
+/* maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind. */
 	struct timespec abstime;
 	clock_gettime(CLOCK_REALTIME, &abstime);
 	abstime.tv_sec += flush_interval_;
 	pthread_cond_timedwait(&cond_, &mutex_, &abstime);
-	swap(buf_vec_,buf_vec_backend_);
+	std::swap(buf_vec_,buf_vec_backend_);
 	if (not running_) looping = false;
 	pthread_mutex_unlock(&mutex_);
       }
 
-    if (buf_vec_backend_.size() == 0 && looping) continue;
-    if (buf_vec_backend_[0]->size() == 0 && looping) continue;
+    if (looping && buf_vec_backend_.size() == 0)     continue;
+    if (looping && buf_vec_backend_[0]->size() == 0) continue;
 
     update_time();
 
-    if (need_rotate_by_size(fd_,rotate_sz_) ||
+    if (need_rotate_by_size(fd_,rotate_sz_) or
         need_rotate_by_time(&tm_last_,&tm_now_)) {
       fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
     }
@@ -265,22 +259,6 @@ void backend::thread_main(void)
 
 /*
  *  linux/kernel/mktime.c
- *
- *  (C) 1991  Linus Torvalds
- */
-
-#include <time.h>
-
-/*
- * This isn't the library routine, it is only used in the kernel.
- * as such, we don't care about years<1970 etc, but assume everything
- * is ok. Similarly, TZ etc is happily ignored. We just do everything
- * as easily as possible. Let's find something public for the library
- * routines (although I think minix times is public).
- */
-/*
- * PS. I hate whoever though up the year 1970 - couldn't they have gotten
- * a leap-year instead? I also hate Gregorius, pope or no. I'm grumpy.
  */
 #define MINUTE 60
 #define HOUR (60*MINUTE)
