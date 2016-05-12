@@ -155,7 +155,8 @@ static void mkdir_unless_exsit(const char *dir)
 {
   if (-1 == access(dir,F_OK)) {
       string mkdir = string("mkdir -p ") + dir;
-      if(system(mkdir.c_str())) return;
+      if(-1 == system(mkdir.c_str()))
+	printf("%s\n", strerror(errno));
   }
 }
 
