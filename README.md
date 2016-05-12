@@ -1,2 +1,2 @@
 # logging
-c++ logging front/back-end, simple, fast, no trick
+c++ logging front/back-end
