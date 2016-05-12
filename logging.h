@@ -91,7 +91,7 @@ public:
   stream& operator<<(const T &t) { os_ << t; return *this; }
 };
 
-struct buf
+class buf
 {
   buf(const buf&) = delete;
   const buf& operator=(const buf&) = delete;
@@ -102,14 +102,14 @@ struct buf
 
 public:
   buf(size_t size) :idx(0), capacity(size), m(nullptr), full_(false) { m = new char[capacity]; }
-  ~buf() { delete[] m; }
-  size_t rest() { return capacity - idx; }
-  const char *c_str() { return m; }
-  size_t size() { return idx; }
-  void reuse() { idx = 0; full_ = false; }
-  bool full() { return full_; }
-  void filled() { full_ = true; }
   void append(const char *s, size_t len) { memcpy(m + idx, s, len); idx += len; }
+  ~buf()              { delete[] m; }
+  size_t rest()       { return capacity - idx; }
+  const char *c_str() { return m; }
+  size_t size()       { return idx; }
+  void reuse()        { idx = 0; full_ = false; }
+  bool full()         { return full_; }
+  void filled()       { full_ = true; }
 };
 
 typedef unique_ptr<buf> buf_ptr;
@@ -120,7 +120,7 @@ void* _starter(void *arg);
 class backend
 {
 public:
-  backend(bool async=false
+  backend( bool   async=false
 	  ,string dir="./log/"
 	  ,string prefix="log"
 	  ,string name="log"
@@ -130,20 +130,21 @@ public:
 	  ,bool   rotate_byhour=false
 	  ,size_t bufsz_K=1
 	  ,size_t flush_sec=3)
-  :async_(async)
-  ,dir_(dir)
-  ,prefix_(prefix)
-  ,suffix_(suffix)
-  ,rotate_sz_(1024*1024*rotate_M)
-  ,rotate_byday_(rotate_byday)
-  ,rotate_byhour_(rotate_byhour)
-  ,buf_capacity_(1024*bufsz_K)
-  ,name_(name)
-  ,flush_interval_(flush_sec)
-  ,pthreadid_(-1)
-  ,tid_(-1)
-  ,running_(false)
-  ,fd_(-1) {
+    :async_(async)
+    ,dir_(dir)
+    ,prefix_(prefix)
+    ,suffix_(suffix)
+    ,rotate_sz_(1024*1024*rotate_M)
+    ,rotate_byday_(rotate_byday)
+    ,rotate_byhour_(rotate_byhour)
+    ,buf_capacity_(1024*bufsz_K)
+    ,name_(name)
+    ,flush_interval_(flush_sec)
+    ,pthreadid_(-1)
+    ,tid_(-1)
+    ,running_(false)
+    ,fd_(-1)
+  {
     mkdir_unless_exsit(dir_.c_str());
     update_time();
     fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),fn_buf_,sizeof(fn_buf_),time_buf_,suffix_.c_str());
