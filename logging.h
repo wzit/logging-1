@@ -53,7 +53,7 @@ enum level {
   FATAL
 };
 
-extern volatile level enabled_level;
+extern level enabled_level;
 void enable(enum level level);
 
 extern logger stdout;
@@ -139,10 +139,10 @@ private:
   pthread_mutex_t mutex_;
   pthread_cond_t  cond_;
 
-  volatile bool running_;
-  int     fd_;
-  char    filename_buf_[512] = {0};
-  char    time_buf_[32] = {0};
+  bool running_;
+  int  fd_;
+  char filename_buf_[512] = {0};
+  char time_buf_[32] = {0};
 
   struct tm tm_last_;
   struct tm tm_now_;

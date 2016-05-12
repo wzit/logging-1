@@ -35,7 +35,7 @@
 using namespace std;
 using namespace logging;
 
-volatile level logging::enabled_level = INFO;
+level logging::enabled_level = INFO;
 logger logging::stdout("stdout",stream(std::cout));
 
 static void mkdir_unless_exsit(const char *dir);
@@ -85,9 +85,10 @@ void* logging::_starter(void *arg)
 bool backend::start()
 {
   if (not async_) return true;
-
   if (pthread_create(&pthreadid_, NULL, _starter, this) == 0) {
-    running_ = true;
+      pthread_mutex_lock(&mutex_);
+      running_ = true;
+      pthread_mutex_unlock(&mutex_);
     return true;
   } else {
     running_ = false;
@@ -97,8 +98,7 @@ bool backend::start()
 
 void backend::stop_and_join()
 {
-  if (not async_)  return;
-
+  if (not async_) return;
   if (running_) {
     pthread_mutex_lock(&mutex_);
     running_ = false;
@@ -111,18 +111,18 @@ void backend::stop_and_join()
 void backend::append(const char* line, size_t len)
 {
   if (not async_) {
-      pthread_mutex_lock(&mutex_);
-      sync_to_file(line,len);
-      pthread_mutex_unlock(&mutex_);
-      return;
+    pthread_mutex_lock(&mutex_);
+    sync_to_file(line,len);
+    pthread_mutex_unlock(&mutex_);
+    return;
   }
 
   pthread_mutex_lock(&mutex_);
   size_t i = 0;
   // find the first one not-full buf in vector.
   for (;i < buf_vec_.size();++i) {
-      if(not buf_vec_[i]->full())
-	  break;
+    if(not buf_vec_[i]->full())
+      break;
   }
   // all buf are full or no buf exsit, new one
   if (i >= buf_vec_.size())
@@ -130,14 +130,14 @@ void backend::append(const char* line, size_t len)
 
   //
   if (buf_vec_[i]->rest() > len) {
-      buf_vec_[i]->push_back(line,len);
+    buf_vec_[i]->push_back(line,len);
   } else {
-      buf_vec_[i]->filled();
-      if (i == (buf_vec_.size()-1))
-	buf_vec_.push_back(buf_ptr(new buf(max(buf_capacity_,len*2))));
+    buf_vec_[i]->filled();
+    if (i == (buf_vec_.size()-1))
+      buf_vec_.push_back(buf_ptr(new buf(max(buf_capacity_,len*2))));
 
-      buf_vec_[++i]->push_back(line,len);
-      pthread_cond_signal(&cond_);
+    buf_vec_[++i]->push_back(line,len);
+    pthread_cond_signal(&cond_);
   }
   pthread_mutex_unlock(&mutex_);
 }
@@ -148,7 +148,7 @@ static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf
   snprintf(fnbuf, bufsz, "%s%s.%s%s", path, prefix, time, suffix);
   fd = ::open(fnbuf, O_WRONLY|O_CREAT|O_TRUNC, 0644);
   if (fd == -1) {
-      printf("%d,%s %s\n",fd,strerror(errno),fnbuf);
+    printf("%d,%s %s\n",fd,strerror(errno),fnbuf);
   }
   return fd;
 }
@@ -156,9 +156,9 @@ static int rotate_file(int fd, const char* path, const char* prefix, char* fnbuf
 static void mkdir_unless_exsit(const char *dir)
 {
   if (-1 == access(dir,F_OK)) {
-      string mkdir = string("mkdir -p ") + dir;
-      if(-1 == system(mkdir.c_str()))
-	printf("%s\n", strerror(errno));
+    string mkdir = string("mkdir -p ") + dir;
+    if(-1 == system(mkdir.c_str()))
+      printf("%s\n", strerror(errno));
   }
 }
 
@@ -169,9 +169,9 @@ static bool need_rotate_by_time(const struct tm *last,const struct tm *now,bool 
     struct tm n = *now;  n.tm_hour=0;n.tm_min=0;n.tm_sec = 0;
     return kernel_mktime(&l) < kernel_mktime(&n);
   } else if (rotate_by_hour) {
-      struct tm l = *last; l.tm_min=0;l.tm_sec = 0;
-      struct tm n = *now;  n.tm_min=0;n.tm_sec = 0;
-      return kernel_mktime(&l) < kernel_mktime(&n);
+    struct tm l = *last; l.tm_min=0;l.tm_sec = 0;
+    struct tm n = *now;  n.tm_min=0;n.tm_sec = 0;
+    return kernel_mktime(&l) < kernel_mktime(&n);
   } else {
     return false;
   }
@@ -193,8 +193,8 @@ static void write_noreturn(int fd, const char *m, size_t s)
   while(s > 0) {
     int written = ::write(fd,m,s);
     if (written == -1) {
-	if (errno == EINTR) continue;
-	printf("%d,%s\n",fd,strerror(errno));return;
+      if (errno == EINTR) continue;
+      printf("%d,%s\n",fd,strerror(errno));return;
     }
     m += written;
     total += written;
@@ -218,7 +218,7 @@ void backend::sync_to_file(const char* line, size_t len)
   update_time();
   if (need_rotate_by_size(fd_,rotate_sz_) ||
       need_rotate_by_time(&tm_last_,&tm_now_)) {
-      fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
+    fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
   }
   write_noreturn(fd_,line,len);
 }
@@ -249,14 +249,14 @@ void backend::thread_main(void)
 
     if (need_rotate_by_size(fd_,rotate_sz_) ||
         need_rotate_by_time(&tm_last_,&tm_now_)) {
-        fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
+      fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),filename_buf_,sizeof(filename_buf_),time_buf_,suffix_.c_str());
     }
 
     for (size_t i=0; i < buf_vec_backend_.size(); ++i) {
-	buf_ptr &buf = buf_vec_backend_.at(i);
-	if (buf->size() != 0)
-	  ::write_noreturn(fd_,buf->c_str(),buf->size());
-	buf->reuse();
+      buf_ptr &buf = buf_vec_backend_.at(i);
+      if (buf->size() != 0)
+	::write_noreturn(fd_,buf->c_str(),buf->size());
+      buf->reuse();
     }
   } while(looping);
   close(fd_);
