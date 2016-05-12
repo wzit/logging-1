@@ -45,7 +45,7 @@
 
 namespace logging {
 /*
- *  logging interface: two classes, simple concept:
+ *  logging interface - two classes, simple concept:
  *
  *  logger  => format one line | a logic module | an ordinary object
  *     n
@@ -54,7 +54,6 @@ namespace logging {
  *  backend => format filename | create/write/flush/rotate file | a posix thread (if working under async mode)
  *
  *  (*) a logger with no backend direct output to std::cout.
- *  modify source directly to customize formatter.
  */
 class logger;
 class backend;
