@@ -45,13 +45,13 @@
 
 namespace logging {
 /*
- *  simple logging interface, two class, lean concept:
+ *  simple logging interface, two classes, lean concept:
  *
  *  logger  => format one line | a logic module | an ordinary object
  *     n
  *     |
  *    0/1 (*)
- *  backend => format filename | create/write/flush/rotate file | a system thread (if working under async mode)
+ *  backend => format filename | create/write/flush/rotate file | a posix thread (if working under async mode)
  *
  *  (*) a logger with no backend direct output to std::cout.
  *  modify source directly to customize formatter.
@@ -71,6 +71,8 @@ extern logger stdout, stderr, stdlog;
 #define LOG_INFO(l)  if(logging::_enabled<=logging::INFO ) logging::formatter(l,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
 #define LOG_ERROR(l) if(logging::_enabled<=logging::ERROR) logging::formatter(l,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
 #define LOG_FATAL(l) if(logging::_enabled<=logging::FATAL) logging::formatter(l,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+
+/*****************************************************************************/
 
 /*
  *  implementation
@@ -93,6 +95,7 @@ public:
 
 class buf
 {
+private:
   buf(const buf&) = delete;
   const buf& operator=(const buf&) = delete;
   size_t idx;
@@ -119,6 +122,35 @@ void* _starter(void *arg);
 
 class backend
 {
+private:
+  const bool   async_;
+  const string dir_;
+  const string prefix_;
+  const string suffix_;
+  const size_t rotate_sz_;
+  const bool   rotate_byday_;
+  const bool   rotate_byhour_;
+  const size_t buf_capacity_;
+  const string name_;
+  const size_t flush_interval_;
+
+  pthread_t       pthreadid_;
+  pid_t           tid_;
+  pthread_mutex_t mutex_;
+  pthread_cond_t  cond_;
+
+  bool running_;
+  int  fd_;
+  char fn_buf_[512] = {0};
+  char time_buf_[32] = {0};
+
+  struct tm tm_last_;
+  struct tm tm_now_;
+  struct timeval now_;
+
+  bufs bufs_;
+  bufs bufs_backend_;
+
 public:
   backend( bool   async=false
 	  ,string dir="./log/"
@@ -369,34 +401,6 @@ private:
     } while(looping);
     ::close(fd_);
   }
-
-  const bool   async_;
-  const string dir_;
-  const string prefix_;
-  const string suffix_;
-  const size_t rotate_sz_;
-  const bool   rotate_byday_;
-  const bool   rotate_byhour_;
-  const size_t buf_capacity_;
-  const string name_;
-  const size_t flush_interval_;
-
-  pthread_t       pthreadid_;
-  pid_t           tid_;
-  pthread_mutex_t mutex_;
-  pthread_cond_t  cond_;
-
-  bool running_;
-  int  fd_;
-  char fn_buf_[512] = {0};
-  char time_buf_[32] = {0};
-
-  struct tm tm_last_;
-  struct tm tm_now_;
-  struct timeval now_;  
-  
-  bufs bufs_;
-  bufs bufs_backend_;
 };
 
 void* _starter(void *arg)
@@ -408,6 +412,7 @@ void* _starter(void *arg)
 
 class logger
 {
+private:
   stream os_;
   backend *const be_;
   char name_[7] = {0};
@@ -438,6 +443,7 @@ public:
 
 class formatter
 {
+private:
   ostringstream os_;
   logger &logger_;
   char buf[32] = {0};
