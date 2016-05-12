@@ -44,7 +44,7 @@ using std::vector;
  *  logging front-end & back-end interface.
  */
 class logger;
-class logging_backend;
+class backend;
 
 enum level {
   DEBUG,
@@ -58,15 +58,10 @@ void enable(enum level level);
 
 extern logger stdout;
 
-#define DEBUG()  if(logging::enabled_level<=logging::DEBUG) logging::formatter(logging::stdout,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define INFO()   if(logging::enabled_level<=logging::INFO ) logging::formatter(logging::stdout,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define ERROR()  if(logging::enabled_level<=logging::ERROR) logging::formatter(logging::stdout,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define FATAL()  if(logging::enabled_level<=logging::FATAL) logging::formatter(logging::stdout,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
-
-#define LOG_DEBUG(logger) if(logging::enabled_level<=logging::DEBUG) logging::formatter(logger,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_INFO(logger)  if(logging::enabled_level<=logging::INFO ) logging::formatter(logger,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_ERROR(logger) if(logging::enabled_level<=logging::ERROR) logging::formatter(logger,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_FATAL(logger) if(logging::enabled_level<=logging::FATAL) logging::formatter(logger,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_DEBUG(_l) if(logging::enabled_level<=logging::DEBUG) logging::formatter((_l),"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_INFO(_l)  if(logging::enabled_level<=logging::INFO ) logging::formatter((_l),"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_ERROR(_l) if(logging::enabled_level<=logging::ERROR) logging::formatter((_l),"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_FATAL(_l) if(logging::enabled_level<=logging::FATAL) logging::formatter((_l),"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
 
 /*
  *  implementation
@@ -105,23 +100,23 @@ typedef unique_ptr<buf> buf_ptr;
 typedef vector<buf_ptr> buf_vec;
 
 void* _starter(void *arg);
-class logging_backend
+class backend
 {
 public:
-  logging_backend(bool async=false
-		  ,string dir="./log/"
-		  ,string prefix="log"
-		  ,string backend_name="logbe"
-		  ,string suffix=".log"
-		  ,int rotate_M=100
-		  ,int bufsz_K=4
-		  ,int flush_sec=3);
-  ~logging_backend();
+  backend(bool async=false
+	  ,string dir="./log/"
+	  ,string prefix="log"
+	  ,string backend_name="logbe"
+	  ,string suffix=".log"
+	  ,size_t rotate_M=100
+	  ,size_t bufsz_K=1
+	  ,size_t flush_sec=3);
+  ~backend();
   void append(const char* line, size_t len);
 
 private:
-  logging_backend(const logging_backend&) = delete;
-  const logging_backend& operator=(const logging_backend&) = delete;
+  backend(const backend&) = delete;
+  const backend& operator=(const backend&) = delete;
 
   bool start();
   void stop_and_join();
@@ -134,10 +129,10 @@ private:
   const string dir_;
   const string prefix_;
   const string suffix_;
-  const int    rotate_sz_;
-  const int    buf_capacity_;
+  const size_t rotate_sz_;
+  const size_t buf_capacity_;
   const string name_;
-  const int    flush_interval_;
+  const size_t flush_interval_;
 
   pthread_t pthreadid_;
   pid_t     tid_;
@@ -160,18 +155,18 @@ private:
 class logger
 {
   stream os_;
-  logging_backend *b_;
+  backend *be_;
   char name_[7] = {0};
 
 public:
   logger(const char name[7], stream os)
-    :os_(os), b_(nullptr) { strncpy(name_, name, 6); }
-  logger(const char name[7],logging_backend *backend)
-    :os_(std::cout), b_(backend) { strncpy(name_, name,6); }
+    :os_(os), be_(nullptr) { strncpy(name_, name, 6); }
+  logger(const char name[7],backend *be)
+    :os_(std::cout), be_(be) { strncpy(name_, name,6); }
 
   const char* name() { return name_; }
   void append(const string &line) {
-    if (b_)  b_->append(line.c_str(), line.size());
+    if (be_)  be_->append(line.c_str(), line.size());
     else     os_ << line;
   }
 };
@@ -196,8 +191,9 @@ class formatter
   }
 
 public:
-  formatter(logger &logger, const char* level, const char* file, int line, const char* func) :logger_(logger) {
-    os_ << header() << " " << level << " " << file << ":" << line << "(" << func << ") # ";
+  formatter(logger &logger, const char* level, const char* file, int line, const char* func)
+    :logger_(logger) {
+    os_<<header()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
   }
   ostringstream& stream() { return os_; }
   ~formatter() { os_ << std::endl; logger_.append(os_.str()); }

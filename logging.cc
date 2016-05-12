@@ -30,6 +30,8 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#define max(a,b) ((a > b) ? (a) : (b))
+
 using namespace std;
 using namespace logging;
 
@@ -40,7 +42,7 @@ static void mkdir_unless_exsit(const char *dir);
 static int  rotate_file(int fd, const char* path, const char* prefix, char* fnbuf, size_t bufsz, const char* time, const char* suffix);
 static long kernel_mktime(struct tm * tm);
 
-logging_backend::logging_backend(bool async,string dir,string prefix,string backend_name, string suffix,int rotate_M,int bufsz_K,int flush_sec)
+backend::backend(bool async,string dir,string prefix,string backend_name, string suffix,size_t rotate_M,size_t bufsz_K,size_t flush_sec)
   :async_(async)
   ,dir_(dir)
   ,prefix_(prefix)
@@ -62,7 +64,7 @@ logging_backend::logging_backend(bool async,string dir,string prefix,string back
   if (async_) start();
 }
 
-logging_backend::~logging_backend()
+backend::~backend()
 {
   if (async_) {
     stop_and_join();
@@ -75,12 +77,12 @@ logging_backend::~logging_backend()
 
 void* logging::_starter(void *arg)
 {
-  logging_backend *self = static_cast<logging_backend*>(arg);
-  self->thread_main();
+  backend *be = static_cast<backend*>(arg);
+  be->thread_main();
   return NULL;
 }
 
-bool logging_backend::start()
+bool backend::start()
 {
   if (not async_) return true;
 
@@ -93,7 +95,7 @@ bool logging_backend::start()
   }
 }
 
-void logging_backend::stop_and_join()
+void backend::stop_and_join()
 {
   if (not async_)  return;
 
@@ -106,7 +108,7 @@ void logging_backend::stop_and_join()
   }
 }
 
-void logging_backend::append(const char* line, size_t len)
+void backend::append(const char* line, size_t len)
 {
   if (not async_) {
       pthread_mutex_lock(&mutex_);
@@ -124,7 +126,7 @@ void logging_backend::append(const char* line, size_t len)
   }
   // all buf are full or no buf exsit, new one
   if (i >= buf_vec_.size())
-    buf_vec_.push_back(buf_ptr(new buf(buf_capacity_)));
+    buf_vec_.push_back(buf_ptr(new buf(max(buf_capacity_,len*2))));
 
   //
   if (buf_vec_[i]->rest() > len) {
@@ -132,7 +134,7 @@ void logging_backend::append(const char* line, size_t len)
   } else {
       buf_vec_[i]->filled();
       if (i == (buf_vec_.size()-1))
-	buf_vec_.push_back(buf_ptr(new buf(buf_capacity_)));
+	buf_vec_.push_back(buf_ptr(new buf(max(buf_capacity_,len*2))));
 
       buf_vec_[++i]->push_back(line,len);
       pthread_cond_signal(&cond_);
@@ -200,7 +202,7 @@ static void write_noreturn(int fd, const char *m, size_t s)
   }
 }
 
-void logging_backend::update_time()
+void backend::update_time()
 {
   gettimeofday(&now_,NULL);
   tm_last_ = tm_now_;
@@ -211,7 +213,7 @@ void logging_backend::update_time()
 	   tm_now_.tm_hour, tm_now_.tm_min, tm_now_.tm_sec, usec);
 }
 
-void logging_backend::sync_to_file(const char* line, size_t len)
+void backend::sync_to_file(const char* line, size_t len)
 {
   update_time();
   if (need_rotate_by_size(fd_,rotate_sz_) ||
@@ -221,7 +223,7 @@ void logging_backend::sync_to_file(const char* line, size_t len)
   write_noreturn(fd_,line,len);
 }
 
-void logging_backend::thread_main(void)
+void backend::thread_main(void)
 {
   ::prctl(PR_SET_NAME, name_.c_str());
   this->tid_ = static_cast<pid_t>(::syscall(SYS_gettid));
@@ -240,8 +242,8 @@ void logging_backend::thread_main(void)
 	pthread_mutex_unlock(&mutex_);
       }
 
-    if (buf_vec_backend_[0]->size()==0 && looping)
-      continue;
+    if (buf_vec_backend_.size() == 0 && looping) continue;
+    if (buf_vec_backend_[0]->size() == 0 && looping) continue;
 
     update_time();
 
