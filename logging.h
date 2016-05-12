@@ -45,7 +45,7 @@
 
 namespace logging {
 /*
- *  simple logging interface, two classes, lean concept:
+ *  logging interface: two classes, simple concept:
  *
  *  logger  => format one line | a logic module | an ordinary object
  *     n
@@ -55,7 +55,6 @@ namespace logging {
  *
  *  (*) a logger with no backend direct output to std::cout.
  *  modify source directly to customize formatter.
- *
  */
 class logger;
 class backend;
@@ -181,7 +180,7 @@ public:
     update_time();
     fd_ = rotate_file(fd_,dir_.c_str(),prefix_.c_str(),fn_buf_,sizeof(fn_buf_),time_buf_,suffix_.c_str());
     if (pthread_mutex_init(&mutex_, NULL) != 0) throw "mutex init error";
-    if (pthread_cond_init(&cond_, NULL) != 0) throw "condition init error";
+    if (pthread_cond_init(&cond_, NULL) != 0)   throw "cond init error";
     if (async_) start();
   }
 
@@ -205,11 +204,11 @@ public:
 
     pthread_mutex_lock(&mutex_);
     size_t i = 0;
-/* find the first of write-able buffer in vector. */
+/* find the first of writeable buffer. */
     for (; i < bufs_.size(); ++i)
       if(not bufs_[i]->full()) break;
 
-/* all buffer are full or no buffer exsits, new one. */
+/* all buffers are full or no buffer exsits, new one. */
     if (i >= bufs_.size())
       bufs_.push_back(buf_ptr(new buf(std::max(buf_capacity_, len*2))));
 
@@ -290,6 +289,7 @@ private:
     return fd;
   }
 
+/* faster mktime, copy from kernel_mktime() */
   long fast_mktime(struct tm * tm) {
     const int MINUTE =60;
     const int HOUR =(60*MINUTE);
