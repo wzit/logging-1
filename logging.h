@@ -370,15 +370,15 @@ private:
     do{
 
       {
-/* swap front/back-end buffer in the CS. */
+/* swap frontend/backend buffer in this CS. */
       pthread_mutex_lock(&mutex_);
-/* maybe? use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind. */
-      struct timespec abstime;
-      clock_gettime(CLOCK_REALTIME, &abstime);
-      abstime.tv_sec += flush_interval_;
-      pthread_cond_timedwait(&cond_, &mutex_, &abstime);
-      std::swap(bufs_,bufs_backend_);
-      if (not running_) looping = false;
+/* TODO: use CLOCK_MONOTONIC or CLOCK_MONOTONIC_RAW to prevent time rewind. */
+	struct timespec abstime;
+	clock_gettime(CLOCK_REALTIME, &abstime);
+	abstime.tv_sec += flush_interval_;
+	pthread_cond_timedwait(&cond_, &mutex_, &abstime);
+	std::swap(bufs_,bufs_backend_);
+	if (not running_) looping = false;
       pthread_mutex_unlock(&mutex_);
       }
 
