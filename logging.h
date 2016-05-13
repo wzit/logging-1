@@ -47,11 +47,11 @@ namespace logging {
 /*
  *  logging interface - two classes, simple concept:
  *
- *  logger  => format one line | a logic module | an ordinary object
+ *  logger  => format one line, a logic module, an ordinary object
  *     n
  *     |
  *    0/1 (*)
- *  backend => format filename | create/write/flush/rotate file | a posix thread (if working under async mode)
+ *  backend => format filename, create/write/flush/rotate file, a posix thread (if working under async mode)
  *
  *  (*) a logger with no backend direct output to std::cout.
  */
@@ -61,7 +61,7 @@ class backend;
 enum level { DEBUG, INFO, ERROR, FATAL };
 
 level _enabled = INFO;
-void enable(level level) { _enabled = level; }
+void enable(level level = INFO) { _enabled = level; }
 
 extern logger stdout, stderr, stdlog;
 
@@ -115,8 +115,6 @@ public:
 
 typedef unique_ptr<buf> buf_ptr;
 typedef vector<buf_ptr> bufs;
-
-void* _starter(void *arg);
 
 class backend
 {
@@ -185,7 +183,7 @@ public:
 
   ~backend() {
     if (async_) {
-      stop_and_join();
+      stop();
       pthread_detach(pthreadid_);
     }
     pthread_mutex_destroy(&mutex_);
@@ -229,10 +227,15 @@ private:
   backend(const backend&) = delete;
   const backend& operator=(const backend&) = delete;
 
-  friend void *_starter(void *arg);
+  static void* _invoker(void *arg) {
+    backend *be = static_cast<backend*>(arg);
+    be->_main();
+    return NULL;
+  }
+
   bool start() {
     if (not async_) return true;
-    if (pthread_create(&pthreadid_, NULL, _starter, this) == 0) {
+    if (pthread_create(&pthreadid_, NULL, _invoker, this) == 0) {
       pthread_mutex_lock(&mutex_);
       running_ = true;
       pthread_mutex_unlock(&mutex_);
@@ -242,7 +245,7 @@ private:
     }
   }
 
-  void stop_and_join() {
+  void stop() {
     if (not async_) return;
     if (running_) {
       pthread_mutex_lock(&mutex_);
@@ -401,13 +404,6 @@ private:
     ::close(fd_);
   }
 };
-
-void* _starter(void *arg)
-{
-  backend *be = static_cast<backend*>(arg);
-  be->_main();
-  return NULL;
-}
 
 class logger
 {
