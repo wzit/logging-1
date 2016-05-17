@@ -65,10 +65,10 @@ void enable(level level = INFO) { _enabled = level; }
 
 extern logger stdout, stderr, stdlog;
 
-#define LOG_DEBUG(l) if(logging::_enabled<=logging::DEBUG) logging::formatter(l,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_INFO(l)  if(logging::_enabled<=logging::INFO ) logging::formatter(l,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_ERROR(l) if(logging::_enabled<=logging::ERROR) logging::formatter(l,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
-#define LOG_FATAL(l) if(logging::_enabled<=logging::FATAL) logging::formatter(l,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_DEBUG(l) if(logging::_enabled<=logging::DEBUG) logging::fmt(l,"DEBUG",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_INFO(l)  if(logging::_enabled<=logging::INFO ) logging::fmt(l,"INFO ",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_ERROR(l) if(logging::_enabled<=logging::ERROR) logging::fmt(l,"ERROR",__FILE__,__LINE__,__FUNCTION__).stream()
+#define LOG_FATAL(l) if(logging::_enabled<=logging::FATAL) logging::fmt(l,"FATAL",__FILE__,__LINE__,__FUNCTION__).stream()
 
 /*****************************************************************************/
 
@@ -434,7 +434,7 @@ public:
   }
 };
 
-class formatter
+class fmt
 {
 private:
   ostringstream os_;
@@ -455,12 +455,12 @@ private:
   }
 
 public:
-  formatter(logger &logger, const char* level, const char* file, int line, const char* func)
+  fmt(logger &logger, const char* level, const char* file, int line, const char* func)
     :logger_(logger) {
     os_<<head()<<" "<<level<<" "<<file<<":"<<line<<"("<<func<<") # ";
   }
   ostringstream& stream() { return os_; }
-  ~formatter() { os_ << std::endl; logger_.append(os_.str()); }
+  ~fmt() { os_ << std::endl; logger_.append(os_.str()); }
 };
 
 logger stdout("stdout",stream(std::cout));
