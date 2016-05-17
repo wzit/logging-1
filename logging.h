@@ -72,9 +72,7 @@ extern logger stdout, stderr, stdlog;
 
 /*****************************************************************************/
 
-/*
- *  implementation
- */
+/* implementation */
 using std::string;
 using std::ostream;
 using std::ostringstream;
